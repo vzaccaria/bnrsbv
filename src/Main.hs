@@ -78,10 +78,26 @@ data Register
     | LR
     deriving (Eq,Ord,Ix,Bounded,Enum)
 
+decSP :: Instruction
+decSP k m =
+    k $
+    m
+    { stackP = stackP m - 4
+    }
+
+incSP :: Instruction
+incSP k m =
+    k $
+    m
+    { stackP = stackP m + 4
+    }
+
 pushReg :: Register -> Instruction
 pushReg r k m =
     let regVal = getReg r m
-    in k . poke (stackP m) regVal $ m
+        _writereg = poke (stackP m) regVal
+        muprog = (incSP k) . _writereg
+    in muprog m
 
 -- | The 'end' combinator "stops" our program, providing the final continuation
 -- that does nothing.
@@ -89,16 +105,24 @@ end
     :: Program
 end = id
 
-program :: SWord32 -> Program
+--   push_w {r2, r4, r5, r6, r7, r8, sb, sl, fp, ip, lr}
+--   ldm_w r1, {r4, r5, r6, r7}
+--   ldm_w r0!, {r8, sb, sl, fp}
+--   mov_w lr, r0
+--   subw ip, pc, #0x774
+--   eor_w r4, r4, r8
+--   eor_w r5, r5, sb
+program
+    :: SWord32 -> Program
 program v = start
   where
-    start = loadImmReg R1 v $ pushReg R1 end
+    start = pushReg R1 $ pushReg R2 $ pushReg R3 $ end
 
 runProgram :: SWord32 -> Address -> ARM -> SWord32
 runProgram v a m = vFinal
   where
     mFinal = program v m
-    vFinal = peek a mFinal
+    vFinal = stackP mFinal
 
 initARM :: Memory -> Address -> Value -> ARM
 initARM m a v =
@@ -124,9 +148,9 @@ initARM m a v =
     }
 
 programIsCorrect :: Memory -> Address -> SWord32 -> SBool
-programIsCorrect m a v = runProgram v a m0 .== v
+programIsCorrect m a v = runProgram v a m0 .== 12
   where
-    m0 = initARM m 0 a
+    m0 = initARM m 0x00 a
 
 theorem =
     prove $
@@ -135,14 +159,6 @@ theorem =
   where
     mem = mkSFunArray (const 0)
 
---   push_w {r2, r4, r5, r6, r7, r8, sb, sl, fp, ip, lr}
---   ldm_w r1, {r4, r5, r6, r7}
---   ldm_w r0!, {r8, sb, sl, fp}
---   mov_w lr, r0
---   subw ip, pc, #0x774
---   eor_w r4, r4, r8
---   eor_w r5, r5, sb
-main
-    :: IO ()
+main :: IO ()
 main = do
     putStrLn "hello world"
